@@ -30,6 +30,7 @@ class UIFont;
 #include <CoreText/CoreText.h>
 #else
 #include <ApplicationServices/ApplicationServices.h>
+#include <Security/Security.h>
 #endif
 
 // Adapted from NSObjCRuntime.h NS_ENUM definition (used in Foundation starting
@@ -50,17 +51,6 @@ typedef unsigned long NSSearchPathDomainMask;
 #else
 typedef CR_FORWARD_ENUM(unsigned int, NSSearchPathDirectory);
 typedef unsigned int NSSearchPathDomainMask;
-#endif
-
-typedef struct OpaqueSecTrustRef* SecACLRef;
-typedef struct OpaqueSecTrustedApplicationRef* SecTrustedApplicationRef;
-
-#if defined(OS_IOS)
-typedef struct CF_BRIDGED_TYPE(id) __SecKey* SecKeyRef;
-typedef struct CF_BRIDGED_TYPE(id) __SecPolicy* SecPolicyRef;
-#else
-typedef struct OpaqueSecKeyRef* SecKeyRef;
-typedef struct OpaqueSecPolicyRef* SecPolicyRef;
 #endif
 
 namespace base {

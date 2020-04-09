@@ -210,9 +210,6 @@ bool ReplaceFile(const FilePath& from_path,
 }
 
 bool CreateLocalNonBlockingPipe(int fds[2]) {
-#if defined(OS_LINUX) || defined(OS_BSD)
-  return pipe2(fds, O_CLOEXEC | O_NONBLOCK) == 0;
-#else
   int raw_fds[2];
   if (pipe(raw_fds) != 0)
     return false;
@@ -229,7 +226,6 @@ bool CreateLocalNonBlockingPipe(int fds[2]) {
   fds[0] = fd_out.release();
   fds[1] = fd_in.release();
   return true;
-#endif
 }
 
 bool SetNonBlocking(int fd) {

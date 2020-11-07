@@ -58,7 +58,7 @@ namespace base {
 namespace {
 
 #if defined(OS_BSD) || defined(OS_MACOSX) || defined(OS_NACL) || \
-    defined(OS_HAIKU) || defined(OS_ANDROID) && __ANDROID_API__ < 21
+    defined(OS_HAIKU) || defined(OS_MSYS) || defined(OS_ANDROID) && __ANDROID_API__ < 21
 int CallStat(const char* path, stat_wrapper_t* sb) {
   return stat(path, sb);
 }
@@ -210,6 +210,9 @@ bool ReplaceFile(const FilePath& from_path,
 }
 
 bool CreateLocalNonBlockingPipe(int fds[2]) {
+#if defined(OS_LINUX) || defined(OS_BSD)
+  return pipe2(fds, O_CLOEXEC | O_NONBLOCK) == 0;
+#else
   int raw_fds[2];
   if (pipe(raw_fds) != 0)
     return false;
@@ -226,6 +229,7 @@ bool CreateLocalNonBlockingPipe(int fds[2]) {
   fds[0] = fd_out.release();
   fds[1] = fd_in.release();
   return true;
+#endif
 }
 
 bool SetNonBlocking(int fd) {

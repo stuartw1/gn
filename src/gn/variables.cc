@@ -5,6 +5,7 @@
 #include "gn/variables.h"
 
 #include "gn/rust_variables.h"
+#include "gn/swift_variables.h"
 
 namespace variables {
 
@@ -698,6 +699,19 @@ const char kBundleExecutableDir_Help[] =
   See "gn help bundle_root_dir" for examples.
 )";
 
+const char kXcassetCompilerFlags[] = "xcasset_compiler_flags";
+const char kXcassetCompilerFlags_HelpShort[] =
+    "xcasset_compiler_flags: [string list] Flags passed to xcassets compiler";
+const char kXcassetCompilerFlags_Help[] =
+    R"(xcasset_compiler_flags: Flags passed to xcassets compiler.
+
+  A list of strings.
+
+  Valid for create_bundle target. Those flags are directly passed to
+  xcassets compiler, corresponding to {{xcasset_compiler_flags}} substitution
+  in compile_xcassets tool.
+)";
+
 const char kCflags[] = "cflags";
 const char kCflags_HelpShort[] =
     "cflags: [string list] Flags passed to all C compiler variants.";
@@ -714,7 +728,8 @@ const char kCommonCflagsHelp[] =
   versions of cflags* will be appended on the compiler command line after
   "cflags".
 
-  See also "asmflags" for flags for assembly-language files.
+  See also "asmflags" for flags for assembly-language files and "swiftflags"
+  for swift files.
 )" COMMON_ORDERING_HELP;
 const char* kCflags_Help = kCommonCflagsHelp;
 
@@ -1395,12 +1410,6 @@ Types of libs
       "lib_dirs" so the given library is found. Your BUILD.gn file should not
       specify the switch (like "-l"): this will be encoded in the "lib_switch"
       of the tool.
-
-  Apple frameworks
-      System libraries ending in ".framework" will be special-cased: the switch
-      "-framework" will be prepended instead of the lib_switch, and the
-      ".framework" suffix will be trimmed. This is to support the way Mac links
-      framework dependencies.
 )" COMMON_ORDERING_HELP LIBS_AND_LIB_DIRS_ORDERING_HELP
     R"(
 Examples
@@ -2010,6 +2019,18 @@ Sources for non-binary targets
     The source are the source files to copy.
 )";
 
+const char kSwiftflags[] = "swiftflags";
+const char kSwiftflags_HelpShort[] =
+    "swiftflags: [string list] Flags passed to the swift compiler.";
+const char* kSwiftflags_Help =
+    R"(swiftflags: Flags passed to the swift compiler.
+
+  A list of strings.
+
+  "swiftflags" are passed to any invocation of a tool that takes an .swift
+  file as input.
+)" COMMON_ORDERING_HELP;
+
 const char kXcodeTestApplicationName[] = "xcode_test_application_name";
 const char kXcodeTestApplicationName_HelpShort[] =
     "xcode_test_application_name: [string] Name for Xcode test target.";
@@ -2127,6 +2148,27 @@ const char kWalkKeys_Help[] =
   See "gn help generated_file".
 )";
 
+const char kWeakFrameworks[] = "weak_frameworks";
+const char kWeakFrameworks_HelpShort[] =
+    "weak_frameworks: [name list] Name of frameworks that must be weak linked.";
+const char kWeakFrameworks_Help[] =
+    R"(weak_frameworks: [name list] Name of frameworks that must be weak linked.
+
+  A list of framework names.
+
+  The frameworks named in that list will be weak linked with any dynamic link
+  type target. Weak linking instructs the dynamic loader to attempt to load
+  the framework, but if it is not able to do so, it leaves any imported symbols
+  unresolved. This is typically used when a framework is present in a new
+  version of an SDK but not on older versions of the OS that the software runs
+  on.
+)" COMMON_ORDERING_HELP
+    R"(
+Example
+
+  weak_frameworks = [ "OnlyOnNewerOSes.framework" ]
+)";
+
 const char kWriteValueContents[] = "contents";
 const char kWriteValueContents_HelpShort[] =
     "contents: Contents to write to file.";
@@ -2232,6 +2274,7 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(BundleResourcesDir)
     INSERT_VARIABLE(BundleDepsFilter)
     INSERT_VARIABLE(BundleExecutableDir)
+    INSERT_VARIABLE(XcassetCompilerFlags)
     INSERT_VARIABLE(Cflags)
     INSERT_VARIABLE(CflagsC)
     INSERT_VARIABLE(CflagsCC)
@@ -2278,15 +2321,18 @@ const VariableInfoMap& GetTargetVariables() {
     INSERT_VARIABLE(ResponseFileContents)
     INSERT_VARIABLE(Script)
     INSERT_VARIABLE(Sources)
+    INSERT_VARIABLE(Swiftflags)
     INSERT_VARIABLE(XcodeTestApplicationName)
     INSERT_VARIABLE(Testonly)
     INSERT_VARIABLE(Visibility)
     INSERT_VARIABLE(WalkKeys)
+    INSERT_VARIABLE(WeakFrameworks)
     INSERT_VARIABLE(WriteOutputConversion)
     INSERT_VARIABLE(WriteValueContents)
     INSERT_VARIABLE(WriteRuntimeDeps)
     INSERT_VARIABLE(XcodeExtraAttributes)
     InsertRustVariables(&info_map);
+    InsertSwiftVariables(&info_map);
   }
   return info_map;
 }

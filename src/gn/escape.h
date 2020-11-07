@@ -31,6 +31,11 @@ enum EscapingMode {
   // characters which we want to pass to the shell (like when writing tool
   // commands). Only Ninja "$" are escaped.
   ESCAPE_NINJA_PREFORMATTED_COMMAND,
+
+  // Shell escaping as described by JSON Compilation Database spec:
+  // Parameters use shell quoting and shell escaping of quotes, with ‘"’ and ‘\’
+  // being the only special characters.
+  ESCAPE_COMPILATION_DATABASE,
 };
 
 enum EscapingPlatform {
@@ -75,5 +80,11 @@ std::string EscapeString(const std::string_view& str,
 void EscapeStringToStream(std::ostream& out,
                           const std::string_view& str,
                           const EscapeOptions& options);
+
+// Same as EscapeString but escape JSON string and writes the results to the
+// given stream, saving a copy.
+void EscapeJSONStringToStream(std::ostream& out,
+                              const std::string_view& str,
+                              const EscapeOptions& options);
 
 #endif  // TOOLS_GN_ESCAPE_H_

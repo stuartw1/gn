@@ -25,6 +25,7 @@
 #include "gn/output_file.h"
 #include "gn/rust_values.h"
 #include "gn/source_file.h"
+#include "gn/swift_values.h"
 #include "gn/toolchain.h"
 #include "gn/unique_vector.h"
 
@@ -210,7 +211,8 @@ class Target : public Item {
   bool hard_dep() const {
     return output_type_ == ACTION || output_type_ == ACTION_FOREACH ||
            output_type_ == COPY_FILES || output_type_ == CREATE_BUNDLE ||
-           output_type_ == BUNDLE_DATA || output_type_ == GENERATED_FILE;
+           output_type_ == BUNDLE_DATA || output_type_ == GENERATED_FILE ||
+           (IsBinary() && swift_values().builds_module());
   }
 
   // Returns the iterator range which can be used in range-based for loops
@@ -271,6 +273,9 @@ class Target : public Item {
   ActionValues& action_values() { return action_values_; }
   const ActionValues& action_values() const { return action_values_; }
 
+  SwiftValues& swift_values() { return swift_values_; }
+  const SwiftValues& swift_values() const { return swift_values_; }
+
   RustValues& rust_values() { return rust_values_; }
   const RustValues& rust_values() const { return rust_values_; }
 
@@ -282,6 +287,9 @@ class Target : public Item {
   }
   const OrderedSet<std::string>& all_frameworks() const {
     return all_frameworks_;
+  }
+  const OrderedSet<std::string>& all_weak_frameworks() const {
+    return all_weak_frameworks_;
   }
 
   const std::set<const Target*>& recursive_hard_deps() const {
@@ -403,10 +411,12 @@ class Target : public Item {
 
   // Validates the given thing when a target is resolved.
   bool CheckVisibility(Err* err) const;
+  bool CheckConfigVisibility(Err* err) const;
   bool CheckTestonly(Err* err) const;
   bool CheckAssertNoDeps(Err* err) const;
   void CheckSourcesGenerated() const;
   void CheckSourceGenerated(const SourceFile& source) const;
+  bool CheckSourceSetLanguages(Err* err) const;
 
   OutputType output_type_ = UNKNOWN;
   std::string output_name_;
@@ -450,6 +460,7 @@ class Target : public Item {
   // all configs applying to this target.
   OrderedSet<SourceDir> all_framework_dirs_;
   OrderedSet<std::string> all_frameworks_;
+  OrderedSet<std::string> all_weak_frameworks_;
 
   // All hard deps from this target and all dependencies. Filled in when this
   // target is marked resolved. This will not include the current target.
@@ -468,6 +479,9 @@ class Target : public Item {
 
   // Used for Rust targets.
   RustValues rust_values_;
+
+  // User for Swift targets.
+  SwiftValues swift_values_;
 
   // Toolchain used by this target. Null until target is resolved.
   const Toolchain* toolchain_ = nullptr;

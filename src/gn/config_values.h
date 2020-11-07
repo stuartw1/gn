@@ -44,11 +44,13 @@ class ConfigValues {
   STRING_VALUES_ACCESSOR(defines)
   DIR_VALUES_ACCESSOR(framework_dirs)
   STRING_VALUES_ACCESSOR(frameworks)
+  STRING_VALUES_ACCESSOR(weak_frameworks)
   DIR_VALUES_ACCESSOR(include_dirs)
   STRING_VALUES_ACCESSOR(ldflags)
   DIR_VALUES_ACCESSOR(lib_dirs)
   STRING_VALUES_ACCESSOR(rustflags)
   STRING_VALUES_ACCESSOR(rustenv)
+  STRING_VALUES_ACCESSOR(swiftflags)
   // =================================================================
   // IMPORTANT: If you add a new one, be sure to update AppendValues()
   //            and command_desc.cc.
@@ -88,12 +90,14 @@ class ConfigValues {
   std::vector<SourceDir> include_dirs_;
   std::vector<SourceDir> framework_dirs_;
   std::vector<std::string> frameworks_;
+  std::vector<std::string> weak_frameworks_;
   std::vector<SourceFile> inputs_;
   std::vector<std::string> ldflags_;
   std::vector<SourceDir> lib_dirs_;
   std::vector<LibFile> libs_;
   std::vector<std::string> rustflags_;
   std::vector<std::string> rustenv_;
+  std::vector<std::string> swiftflags_;
   std::vector<std::pair<std::string, LibFile>> externs_;
   // If you add a new one, be sure to update AppendValues().
 

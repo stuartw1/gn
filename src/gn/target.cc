@@ -223,6 +223,9 @@ Overall build flow
 
   6. When all targets are resolved, write out the root build.ninja file.
 
+  Note that the BUILD.gn file name may be modulated by .gn arguments such as
+  build_file_extension.
+
 Executing target definitions and templates
 
   Build files are loaded in parallel. This means it is impossible to
@@ -335,6 +338,11 @@ bool Target::OnResolved(Err* err) {
   ScopedTrace trace(TraceItem::TRACE_ON_RESOLVED, label());
   trace.SetToolchain(settings()->toolchain_label());
 
+  // Check visibility for just this target's own configs, before dependents are
+  // added.
+  if (!CheckConfigVisibility(err))
+    return false;
+
   // Copy this target's own dependent and public configs to the list of configs
   // applying to it.
   configs_.Append(all_dependent_configs_.begin(), all_dependent_configs_.end());
@@ -372,6 +380,8 @@ bool Target::OnResolved(Err* err) {
     all_framework_dirs_.append(cur.framework_dirs().begin(),
                                cur.framework_dirs().end());
     all_frameworks_.append(cur.frameworks().begin(), cur.frameworks().end());
+    all_weak_frameworks_.append(cur.weak_frameworks().begin(),
+                                cur.weak_frameworks().end());
   }
 
   PullRecursiveBundleData();
@@ -383,6 +393,11 @@ bool Target::OnResolved(Err* err) {
   if (!FillOutputFiles(err))
     return false;
 
+  if (!swift_values_.OnTargetResolved(this, err))
+    return false;
+
+  if (!CheckSourceSetLanguages(err))
+    return false;
   if (!CheckVisibility(err))
     return false;
   if (!CheckTestonly(err))
@@ -420,12 +435,7 @@ bool Target::IsFinal() const {
          output_type_ == LOADABLE_MODULE || output_type_ == ACTION ||
          output_type_ == ACTION_FOREACH || output_type_ == COPY_FILES ||
          output_type_ == CREATE_BUNDLE || output_type_ == RUST_PROC_MACRO ||
-         (output_type_ == STATIC_LIBRARY &&
-          (complete_static_lib_ ||
-           // Rust static libraries may be used from C/C++ code and therefore
-           // require all dependencies to be linked in as we cannot link their
-           // (Rust) dependencies directly as we would for C/C++.
-           source_types_used_.RustSourceUsed()));
+         (output_type_ == STATIC_LIBRARY && complete_static_lib_);
 }
 
 DepsIteratorRange Target::GetDeps(DepsIterationType type) const {
@@ -502,8 +512,7 @@ bool Target::GetOutputsAsSourceFiles(const LocationRange& loc_for_error,
       output_type() == Target::ACTION_FOREACH ||
       output_type() == Target::GENERATED_FILE) {
     action_values().GetOutputsAsSourceFiles(this, outputs);
-  } else if (output_type() == Target::CREATE_BUNDLE ||
-             output_type() == Target::GENERATED_FILE) {
+  } else if (output_type() == Target::CREATE_BUNDLE) {
     if (!bundle_data().GetOutputsAsSourceFiles(settings(), this, outputs, err))
       return false;
   } else if (IsBinary() && output_type() != Target::SOURCE_SET) {
@@ -528,7 +537,7 @@ bool Target::GetOutputsAsSourceFiles(const LocationRange& loc_for_error,
           output_file.AsSourceFile(settings()->build_settings()));
     }
   } else {
-    // Everything else (like a group or something) has a stamp output. The
+    // Everything else (like a group or bundle_data) has a stamp output. The
     // dependency output file should have computed what this is. This won't be
     // valid unless the build is complete.
     if (!build_complete) {
@@ -591,9 +600,19 @@ bool Target::GetOutputFilesForSource(const SourceFile& source,
     if (!tool)
       return false;  // Tool does not apply for this toolchain.file.
 
+    // Swift may generate on a module or source level.
+    if (file_type == SourceFile::SOURCE_SWIFT) {
+      if (tool->partial_outputs().list().empty())
+        return false;
+    }
+
+    const SubstitutionList& substitution_list =
+        file_type == SourceFile::SOURCE_SWIFT ? tool->partial_outputs()
+                                              : tool->outputs();
+
     // Figure out what output(s) this compiler produces.
     SubstitutionWriter::ApplyListToCompilerAsOutputFile(
-        this, source, tool->outputs(), outputs);
+        this, source, substitution_list, outputs);
   }
   return !outputs->empty();
 }
@@ -628,8 +647,7 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
     inherited_libraries_.Append(dep, is_public);
   }
 
-  if (dep->output_type() == RUST_LIBRARY ||
-      dep->output_type() == RUST_PROC_MACRO) {
+  if (dep->output_type() == RUST_LIBRARY) {
     rust_values().transitive_libs().Append(dep, is_public);
     rust_values().transitive_libs().AppendInherited(
         dep->rust_values().transitive_libs(), is_public);
@@ -644,6 +662,11 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
                                     is_public && inherited.second);
       }
     }
+  } else if (dep->output_type() == RUST_PROC_MACRO) {
+    // We will need to specify the path to find a procedural macro,
+    // but have no need to specify the paths to find its dependencies
+    // as the procedural macro is now a complete .so.
+    rust_values().transitive_libs().Append(dep, is_public);
   } else if (dep->output_type() == SHARED_LIBRARY) {
     // Shared library dependendencies are inherited across public shared
     // library boundaries.
@@ -695,6 +718,7 @@ void Target::PullDependentTargetLibsFrom(const Target* dep, bool is_public) {
 
     all_framework_dirs_.append(dep->all_framework_dirs());
     all_frameworks_.append(dep->all_frameworks());
+    all_weak_frameworks_.append(dep->all_weak_frameworks());
   }
 }
 
@@ -715,9 +739,12 @@ void Target::PullRecursiveHardDeps() {
 
     // If |pair.ptr| is binary target and |pair.ptr| has no public header,
     // |this| target does not need to have |pair.ptr|'s hard_deps as its
-    // hard_deps to start compiles earlier.
+    // hard_deps to start compiles earlier. Unless the target compiles a
+    // Swift module (since they also generate a header that can be used
+    // by the current target).
     if (pair.ptr->IsBinary() && !pair.ptr->all_headers_public() &&
-        pair.ptr->public_headers().empty()) {
+        pair.ptr->public_headers().empty() &&
+        !pair.ptr->swift_values().builds_module()) {
       continue;
     }
 
@@ -930,6 +957,26 @@ bool Target::CheckVisibility(Err* err) const {
   for (const auto& pair : GetDeps(DEPS_ALL)) {
     if (!Visibility::CheckItemVisibility(this, pair.ptr, err))
       return false;
+  }
+  return true;
+}
+
+bool Target::CheckConfigVisibility(Err* err) const {
+  for (ConfigValuesIterator iter(this); !iter.done(); iter.Next()) {
+    if (const Config* config = iter.GetCurrentConfig())
+      if (!Visibility::CheckItemVisibility(this, config, err))
+        return false;
+  }
+  return true;
+}
+
+bool Target::CheckSourceSetLanguages(Err* err) const {
+  if (output_type() == Target::SOURCE_SET &&
+      source_types_used().RustSourceUsed()) {
+    *err = Err(defined_from(), "source_set contained Rust code.",
+               label().GetUserVisibleName(false) +
+                   " has Rust code. Only C/C++ source_sets are supported.");
+    return false;
   }
   return true;
 }

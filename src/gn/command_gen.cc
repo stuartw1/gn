@@ -17,6 +17,7 @@
 #include "gn/ninja_writer.h"
 #include "gn/qt_creator_writer.h"
 #include "gn/runtime_deps.h"
+#include "gn/rust_project_writer.h"
 #include "gn/scheduler.h"
 #include "gn/setup.h"
 #include "gn/standard_out.h"
@@ -42,28 +43,20 @@ const char kSwitchIdeValueVs2019[] = "vs2019";
 const char kSwitchIdeValueWinSdk[] = "winsdk";
 const char kSwitchIdeValueXcode[] = "xcode";
 const char kSwitchIdeValueJson[] = "json";
+const char kSwitchIdeRootTarget[] = "ide-root-target";
 const char kSwitchNinjaExecutable[] = "ninja-executable";
 const char kSwitchNinjaExtraArgs[] = "ninja-extra-args";
 const char kSwitchNoDeps[] = "no-deps";
-const char kSwitchRootTarget[] = "root-target";
 const char kSwitchSln[] = "sln";
-const char kSwitchWorkspace[] = "workspace";
+const char kSwitchXcodeProject[] = "xcode-project";
+const char kSwitchXcodeBuildSystem[] = "xcode-build-system";
+const char kSwitchXcodeBuildsystemValueLegacy[] = "legacy";
+const char kSwitchXcodeBuildsystemValueNew[] = "new";
 const char kSwitchJsonFileName[] = "json-file-name";
 const char kSwitchJsonIdeScript[] = "json-ide-script";
 const char kSwitchJsonIdeScriptArgs[] = "json-ide-script-args";
 const char kSwitchExportCompileCommands[] = "export-compile-commands";
-
-// Extracts extra parameters for XcodeWriter from command-line flags.
-XcodeWriter::Options XcodeWriterOptionsFromCommandLine(
-    const base::CommandLine& command_line) {
-  return {
-      command_line.GetSwitchValueASCII(kSwitchWorkspace),
-      command_line.GetSwitchValueASCII(kSwitchRootTarget),
-      command_line.GetSwitchValueASCII(kSwitchNinjaExecutable),
-      command_line.GetSwitchValueASCII(kSwitchNinjaExtraArgs),
-      command_line.GetSwitchValueASCII(kSwitchFilters),
-  };
-}
+const char kSwitchExportRustProject[] = "export-rust-project";
 
 // Collects Ninja rules for each toolchain. The lock protectes the rules.
 struct TargetWriteInfo {
@@ -247,9 +240,33 @@ bool RunIdeWriter(const std::string& ide,
     }
     return res;
   } else if (ide == kSwitchIdeValueXcode) {
-    bool res = XcodeWriter::RunAndWriteFiles(
-        build_settings, builder,
-        XcodeWriterOptionsFromCommandLine(*command_line), err);
+    XcodeWriter::Options options = {
+        command_line->GetSwitchValueASCII(kSwitchXcodeProject),
+        command_line->GetSwitchValueASCII(kSwitchIdeRootTarget),
+        command_line->GetSwitchValueASCII(kSwitchNinjaExecutable),
+        command_line->GetSwitchValueASCII(kSwitchFilters),
+        XcodeBuildSystem::kLegacy,
+    };
+
+    if (options.project_name.empty()) {
+      options.project_name = "all";
+    }
+
+    const std::string build_system =
+        command_line->GetSwitchValueASCII(kSwitchXcodeBuildSystem);
+    if (!build_system.empty()) {
+      if (build_system == kSwitchXcodeBuildsystemValueNew) {
+        options.build_system = XcodeBuildSystem::kNew;
+      } else if (build_system == kSwitchXcodeBuildsystemValueLegacy) {
+        options.build_system = XcodeBuildSystem::kLegacy;
+      } else {
+        *err = Err(Location(), "Unknown build system: " + build_system);
+        return false;
+      }
+    }
+
+    bool res =
+        XcodeWriter::RunAndWriteFiles(build_settings, builder, options, err);
     if (res && !quiet) {
       OutputString("Generating Xcode projects took " +
                    base::Int64ToString(timer.Elapsed().InMilliseconds()) +
@@ -258,8 +275,8 @@ bool RunIdeWriter(const std::string& ide,
     return res;
   } else if (ide == kSwitchIdeValueQtCreator) {
     std::string root_target;
-    if (command_line->HasSwitch(kSwitchRootTarget))
-      root_target = command_line->GetSwitchValueASCII(kSwitchRootTarget);
+    if (command_line->HasSwitch(kSwitchIdeRootTarget))
+      root_target = command_line->GetSwitchValueASCII(kSwitchIdeRootTarget);
     bool res = QtCreatorWriter::RunAndWriteFile(build_settings, builder, err,
                                                 root_target);
     if (res && !quiet) {
@@ -292,6 +309,25 @@ bool RunIdeWriter(const std::string& ide,
 
   *err = Err(Location(), "Unknown IDE: " + ide);
   return false;
+}
+
+bool RunRustProjectWriter(const BuildSettings* build_settings,
+                          const Builder& builder,
+                          Err* err) {
+  const base::CommandLine* command_line =
+      base::CommandLine::ForCurrentProcess();
+  bool quiet = command_line->HasSwitch(switches::kQuiet);
+  base::ElapsedTimer timer;
+
+  std::string file_name = "rust-project.json";
+  bool res = RustProjectWriter::RunAndWriteFiles(build_settings, builder,
+                                                 file_name, quiet, err);
+  if (res && !quiet) {
+    OutputString("Generating rust-project.json took " +
+                 base::Int64ToString(timer.Elapsed().InMilliseconds()) +
+                 "ms\n");
+  }
+  return res;
 }
 
 bool RunCompileCommandsWriter(const BuildSettings* build_settings,
@@ -339,7 +375,8 @@ const char kGen_Help[] =
 
 IDE options
 
-  GN optionally generates files for IDE. Possibilities for <ide options>
+  GN optionally generates files for IDE. Files won't be overwritten if their
+  contents don't change. Possibilities for <ide options>
 
   --ide=<ide_name>
       Generate files for an IDE. Currently supported values:
@@ -381,9 +418,15 @@ Visual Studio Flags
 
 Xcode Flags
 
-  --workspace=<file_name>
-      Override defaut workspace file name ("all"). The workspace file is
+  --xcode-project=<file_name>
+      Override defaut Xcode project file name ("all"). The project file is
       written to the root build directory.
+
+  --xcode-build-system=<value>
+      Configure the build system to use for the Xcode project. Supported
+      values are (default to "legacy"):
+      "legacy" - Legacy Build system
+      "new" - New Build System
 
   --ninja-executable=<string>
       Can be used to specify the ninja executable to use when building.
@@ -392,13 +435,13 @@ Xcode Flags
       This string is passed without any quoting to the ninja invocation
       command-line. Can be used to configure ninja flags, like "-j".
 
-  --root-target=<target_name>
+  --ide-root-target=<target_name>
       Name of the target corresponding to "All" target in Xcode. If unset,
       "All" invokes ninja without any target and builds everything.
 
 QtCreator Flags
 
-  --root-target=<target_name>
+  --ide-root-target=<target_name>
       Name of the root target for which the QtCreator project will be generated
       to contain files of it and its dependencies. If unset, the whole build
       graph will be emitted.
@@ -425,15 +468,21 @@ Generic JSON Output
       Overrides default file name (project.json) of generated JSON file.
 
   --json-ide-script=<path_to_python_script>
-      Executes python script after the JSON file is generated. Path can be
-      project absolute (//), system absolute (/) or relative, in which case the
-      output directory will be base. Path to generated JSON file will be first
-      argument when invoking script.
+      Executes python script after the JSON file is generated or updated with
+      new content. Path can be project absolute (//), system absolute (/) or
+      relative, in which case the output directory will be base. Path to
+      generated JSON file will be first argument when invoking script.
 
   --json-ide-script-args=<argument>
       Optional second argument that will passed to executed script.
 
 Compilation Database
+
+  --export-rust-project
+      Produces a rust-project.json file in the root of the build directory
+      This is used for various tools in the Rust ecosystem allowing for the
+      replay of individual compilations independent of the build system.
+      This is an unstable format and likely to change without warning.
 
   --export-compile-commands[=<target_name1,target_name2...>]
       Produces a compile_commands.json file in the root of the build directory
@@ -522,6 +571,12 @@ int RunGen(const std::vector<std::string>& args) {
   if (command_line->HasSwitch(kSwitchExportCompileCommands) &&
       !RunCompileCommandsWriter(&setup->build_settings(), setup->builder(),
                                 &err)) {
+    err.PrintToStdout();
+    return 1;
+  }
+
+  if (command_line->HasSwitch(kSwitchExportRustProject) &&
+      !RunRustProjectWriter(&setup->build_settings(), setup->builder(), &err)) {
     err.PrintToStdout();
     return 1;
   }

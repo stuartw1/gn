@@ -59,9 +59,8 @@ const char kFormat_Help[] =
 Arguments
 
   --dry-run
-      Does not change or output anything, but sets the process exit code based
-      on whether output would be different than what's on disk. This is useful
-      for presubmit/lint-type checks.
+      Prints the list of files that would be reformatted but does not write
+      anything to disk. This is useful for presubmit/lint-type checks.
       - Exit code 0: successful format, matches on disk.
       - Exit code 1: general failure (parse error, etc.)
       - Exit code 2: successful format, but differs from on disk.
@@ -156,11 +155,12 @@ class Printer {
   // Whether there's a blank separator line at the current position.
   bool HaveBlankLine();
 
-  // Sort a list on the RHS if the LHS is 'sources', 'deps' or 'public_deps'.
-  // The 'sources' are sorted alphabetically while the 'deps' and 'public_deps'
-  // are sorted putting first the relative targets and then the global ones
-  // (both sorted alphabetically).
-  void SortIfSourcesOrDeps(const BinaryOpNode* binop);
+  // Sort a list on the RHS if the LHS is one of the following:
+  // 'sources': sorted alphabetically.
+  // 'deps' or ends in 'deps': sorted such that relative targets are first,
+  //   followed by global targets, each internally sorted alphabetically.
+  // 'visibility': same as 'deps'.
+  void SortIfApplicable(const BinaryOpNode* binop);
 
   // Sort contiguous import() function calls in the given ordered list of
   // statements (the body of a block or scope).
@@ -383,7 +383,7 @@ bool Printer::HaveBlankLine() {
   return n > 2 && output_[n - 1] == '\n' && output_[n - 2] == '\n';
 }
 
-void Printer::SortIfSourcesOrDeps(const BinaryOpNode* binop) {
+void Printer::SortIfApplicable(const BinaryOpNode* binop) {
   if (const Comments* comments = binop->comments()) {
     const std::vector<Token>& before = comments->before();
     if (!before.empty() && (before.front().value() == "# NOSORT" ||
@@ -402,8 +402,9 @@ void Printer::SortIfSourcesOrDeps(const BinaryOpNode* binop) {
     if (base::EndsWith(lhs, "sources", base::CompareCase::SENSITIVE) ||
         lhs == "public")
       const_cast<ListNode*>(list)->SortAsStringsList();
-    else if (base::EndsWith(lhs, "deps", base::CompareCase::SENSITIVE))
-      const_cast<ListNode*>(list)->SortAsDepsList();
+    else if (base::EndsWith(lhs, "deps", base::CompareCase::SENSITIVE) ||
+        lhs == "visibility")
+      const_cast<ListNode*>(list)->SortAsTargetsList();
   }
 }
 
@@ -443,9 +444,14 @@ void Printer::SortImports(std::vector<std::unique_ptr<PARSENODE>>& statements) {
       const auto& b_args = b->AsFunctionCall()->args()->contents();
       std::string_view a_name;
       std::string_view b_name;
-      if (!a_args.empty())
+
+      // Non-literal imports are treated as empty names, and order is
+      // maintained. Arbitrarily complex expressions in import() are
+      // rare, and it probably doesn't make sense to sort non-string
+      // literals anyway, see format_test_data/083.gn.
+      if (!a_args.empty() && a_args[0]->AsLiteral())
         a_name = a_args[0]->AsLiteral()->value().value();
-      if (!b_args.empty())
+      if (!b_args.empty() && b_args[0]->AsLiteral())
         b_name = b_args[0]->AsLiteral()->value().value();
 
       auto is_absolute = [](std::string_view import) {
@@ -720,7 +726,7 @@ int Printer::Expr(const ParseNode* root,
   } else if (const BinaryOpNode* binop = root->AsBinaryOp()) {
     CHECK(precedence_.find(binop->op().value()) != precedence_.end());
 
-    SortIfSourcesOrDeps(binop);
+    SortIfApplicable(binop);
 
     Precedence prec = precedence_[binop->op().value()];
 
@@ -1202,19 +1208,19 @@ void DoFormat(const ParseNode* root,
               TreeDumpMode dump_tree,
               std::string* output) {
 #if defined(OS_WIN)
-    // Set stderr to binary mode to prevent converting newlines to \r\n.
-    _setmode(_fileno(stderr), _O_BINARY);
+    // Set stdout to binary mode to prevent converting newlines to \r\n.
+    _setmode(_fileno(stdout), _O_BINARY);
 #endif
 
   if (dump_tree == TreeDumpMode::kPlainText) {
     std::ostringstream os;
     RenderToText(root->GetJSONNode(), 0, os);
-    fprintf(stderr, "%s", os.str().c_str());
+    fprintf(stdout, "%s", os.str().c_str());
   } else if (dump_tree == TreeDumpMode::kJSON) {
     std::string os;
     base::JSONWriter::WriteWithOptions(
         root->GetJSONNode(), base::JSONWriter::OPTIONS_PRETTY_PRINT, &os);
-    fprintf(stderr, "%s", os.c_str());
+    fprintf(stdout, "%s", os.c_str());
   }
 
   Printer pr;
@@ -1313,12 +1319,14 @@ int RunFormat(const std::vector<std::string>& args) {
 
   // TODO(scottmg): Eventually, this list of files should be processed in
   // parallel.
+  int exit_code = 0;
   for (const auto& arg : args) {
     Err err;
     SourceFile file = source_dir.ResolveRelativeFile(Value(nullptr, arg), &err);
     if (err.has_error()) {
       err.PrintToStdout();
-      return 1;
+      exit_code = 1;
+      continue;
     }
 
     base::FilePath to_format = setup.build_settings().GetFullPath(file);
@@ -1327,17 +1335,24 @@ int RunFormat(const std::vector<std::string>& args) {
       Err(Location(),
           std::string("Couldn't read \"") + FilePathToUTF8(to_format))
           .PrintToStdout();
-      return 1;
+      exit_code = 1;
+      continue;
     }
 
     std::string output_string;
     if (!FormatStringToString(original_contents, dump_tree, &output_string)) {
-      return 1;
+      exit_code = 1;
+      continue;
     }
     if (dump_tree == TreeDumpMode::kInactive) {
+      if (dry_run) {
+        if (original_contents != output_string) {
+          printf("%s\n", arg.c_str());
+          exit_code = 2;
+        }
+        continue;
+      }
       // Update the file in-place.
-      if (dry_run)
-        return original_contents == output_string ? 0 : 2;
       if (original_contents != output_string) {
         if (base::WriteFile(to_format, output_string.data(),
                             static_cast<int>(output_string.size())) == -1) {
@@ -1345,17 +1360,18 @@ int RunFormat(const std::vector<std::string>& args) {
               std::string("Failed to write formatted output back to \"") +
                   FilePathToUTF8(to_format) + std::string("\"."))
               .PrintToStdout();
-          return 1;
+          exit_code = 1;
+          continue;
         }
         if (!quiet) {
           printf("Wrote formatted to '%s'.\n",
-                 FilePathToUTF8(to_format).c_str());
+                FilePathToUTF8(to_format).c_str());
         }
       }
     }
   }
 
-  return 0;
+  return exit_code;
 }
 
 }  // namespace commands

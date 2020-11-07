@@ -37,6 +37,7 @@ extern const Substitution SubstitutionLiteral;
 extern const Substitution SubstitutionOutput;
 extern const Substitution SubstitutionLabel;
 extern const Substitution SubstitutionLabelName;
+extern const Substitution SubstitutionLabelNoToolchain;
 extern const Substitution SubstitutionRootGenDir;
 extern const Substitution SubstitutionRootOutDir;
 extern const Substitution SubstitutionOutputDir;
@@ -64,6 +65,7 @@ extern const Substitution SubstitutionBundleExecutableDir;
 // Valid for compile_xcassets tool.
 extern const Substitution SubstitutionBundleProductType;
 extern const Substitution SubstitutionBundlePartialInfoPlist;
+extern const Substitution SubstitutionXcassetsCompilerFlags;
 
 // Used only for the args of actions.
 extern const Substitution SubstitutionRspFileName;

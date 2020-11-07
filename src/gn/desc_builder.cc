@@ -15,10 +15,12 @@
 #include "gn/input_file.h"
 #include "gn/parse_tree.h"
 #include "gn/runtime_deps.h"
+#include "gn/rust_variables.h"
 #include "gn/scope.h"
 #include "gn/settings.h"
 #include "gn/standard_out.h"
 #include "gn/substitution_writer.h"
+#include "gn/swift_variables.h"
 #include "gn/variables.h"
 
 // Example structure of Value for single target
@@ -252,6 +254,11 @@ class ConfigDescBuilder : public BaseDescBuilder {
       res->SetWithoutPathExpansion(variables::kConfigs, std::move(configs));
     }
 
+    if (what(variables::kVisibility)) {
+      res->SetWithoutPathExpansion(variables::kVisibility,
+                                   config_->visibility().AsValue());
+    }
+
 #define CONFIG_VALUE_ARRAY_HANDLER(name, type)                        \
   if (what(#name)) {                                                  \
     ValuePtr ptr =                                                    \
@@ -268,11 +275,14 @@ class ConfigDescBuilder : public BaseDescBuilder {
     CONFIG_VALUE_ARRAY_HANDLER(cflags_objc, std::string)
     CONFIG_VALUE_ARRAY_HANDLER(cflags_objcc, std::string)
     CONFIG_VALUE_ARRAY_HANDLER(defines, std::string)
+    CONFIG_VALUE_ARRAY_HANDLER(frameworks, std::string)
+    CONFIG_VALUE_ARRAY_HANDLER(framework_dirs, SourceDir)
     CONFIG_VALUE_ARRAY_HANDLER(include_dirs, SourceDir)
     CONFIG_VALUE_ARRAY_HANDLER(inputs, SourceFile)
     CONFIG_VALUE_ARRAY_HANDLER(ldflags, std::string)
     CONFIG_VALUE_ARRAY_HANDLER(lib_dirs, SourceDir)
     CONFIG_VALUE_ARRAY_HANDLER(libs, LibFile)
+    CONFIG_VALUE_ARRAY_HANDLER(swiftflags, std::string)
 
 #undef CONFIG_VALUE_ARRAY_HANDLER
 
@@ -326,10 +336,27 @@ class TargetDescBuilder : public BaseDescBuilder {
     }
 
     if (target_->source_types_used().RustSourceUsed()) {
-      res->SetWithoutPathExpansion(
-          "crate_root", RenderValue(target_->rust_values().crate_root()));
-      res->SetKey("crate_name",
-                  base::Value(target_->rust_values().crate_name()));
+      if (what(variables::kRustCrateRoot)) {
+        res->SetWithoutPathExpansion(
+            variables::kRustCrateRoot,
+            RenderValue(target_->rust_values().crate_root()));
+      }
+      if (what(variables::kRustCrateName)) {
+        res->SetKey(variables::kRustCrateName,
+                    base::Value(target_->rust_values().crate_name()));
+      }
+    }
+
+    if (target_->source_types_used().SwiftSourceUsed()) {
+      if (what(variables::kSwiftBridgeHeader)) {
+        res->SetWithoutPathExpansion(
+            variables::kSwiftBridgeHeader,
+            RenderValue(target_->swift_values().bridge_header()));
+      }
+      if (what(variables::kSwiftModuleName)) {
+        res->SetKey(variables::kSwiftModuleName,
+                    base::Value(target_->swift_values().module_name()));
+      }
     }
 
     // General target meta variables.
@@ -483,6 +510,7 @@ class TargetDescBuilder : public BaseDescBuilder {
       CONFIG_VALUE_ARRAY_HANDLER(include_dirs, SourceDir)
       CONFIG_VALUE_ARRAY_HANDLER(inputs, SourceFile)
       CONFIG_VALUE_ARRAY_HANDLER(ldflags, std::string)
+      CONFIG_VALUE_ARRAY_HANDLER(swiftflags, std::string)
 #undef CONFIG_VALUE_ARRAY_HANDLER
 
       // Libs and lib_dirs are handled specially below.
@@ -566,6 +594,16 @@ class TargetDescBuilder : public BaseDescBuilder {
         for (size_t i = 0; i < all_frameworks.size(); i++)
           frameworks->AppendString(all_frameworks[i]);
         res->SetWithoutPathExpansion(variables::kFrameworks,
+                                     std::move(frameworks));
+      }
+    }
+    if (what(variables::kWeakFrameworks)) {
+      const auto& weak_frameworks = target_->all_weak_frameworks();
+      if (!weak_frameworks.empty()) {
+        auto frameworks = std::make_unique<base::ListValue>();
+        for (size_t i = 0; i < weak_frameworks.size(); i++)
+          frameworks->AppendString(weak_frameworks[i]);
+        res->SetWithoutPathExpansion(variables::kWeakFrameworks,
                                      std::move(frameworks));
       }
     }

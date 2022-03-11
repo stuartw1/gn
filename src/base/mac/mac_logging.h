@@ -9,7 +9,7 @@
 #include "base/macros.h"
 #include "util/build_config.h"
 
-#if defined(OS_IOS)
+#if defined(OS_IOS) || defined(OS_TVOS)
 #include <MacTypes.h>
 #else
 #include <libkern/OSTypes.h>

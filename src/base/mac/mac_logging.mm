@@ -10,7 +10,7 @@
 
 #include "util/build_config.h"
 
-#if !defined(OS_IOS)
+#if !defined(OS_IOS) && !defined(OS_TVOS)
 #include <CoreServices/CoreServices.h>
 #endif
 
@@ -29,7 +29,7 @@ OSStatusLogMessage::OSStatusLogMessage(const char* file_path,
     : LogMessage(file_path, line, severity), status_(status) {}
 
 OSStatusLogMessage::~OSStatusLogMessage() {
-#if defined(OS_IOS)
+#if defined(OS_IOS) || defined(OS_TVOS)
   // TODO(crbug.com/546375): Consider using NSError with NSOSStatusErrorDomain
   // to try to get a description of the failure.
   stream() << ": " << status_;

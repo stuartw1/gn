@@ -205,6 +205,7 @@ Possible values
   - "android"
   - "chromeos"
   - "ios"
+  - "tvos"
   - "linux"
   - "nacl"
   - "mac"

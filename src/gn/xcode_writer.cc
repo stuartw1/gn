@@ -97,6 +97,7 @@ sys.exit(process.returncode)
 
 enum TargetOsType {
   WRITER_TARGET_OS_IOS,
+  WRITER_TARGET_OS_TVOS,
   WRITER_TARGET_OS_MACOS,
 };
 
@@ -130,6 +131,8 @@ TargetOsType GetTargetOs(const Args& args) {
     if (target_os_value->type() == Value::STRING) {
       if (target_os_value->string_value() == "ios")
         return WRITER_TARGET_OS_IOS;
+      if (target_os_value->string_value() == "tvos")
+        return WRITER_TARGET_OS_TVOS;
     }
   }
   return WRITER_TARGET_OS_MACOS;
@@ -410,6 +413,10 @@ PBXAttributes ProjectAttributesFromBuildSettings(
     case WRITER_TARGET_OS_IOS:
       attributes["SDKROOT"] = "iphoneos";
       attributes["TARGETED_DEVICE_FAMILY"] = "1,2";
+      break;
+    case WRITER_TARGET_OS_TVOS:
+      attributes["SDKROOT"] = "appletvos";
+      attributes["TARGETED_DEVICE_FAMILY"] = "3";
       break;
     case WRITER_TARGET_OS_MACOS:
       attributes["SDKROOT"] = "macosx";
@@ -730,6 +737,8 @@ bool XcodeProject::AddTargetsFromBuilder(const Builder& builder, Err* err) {
     switch (target->output_type()) {
       case Target::EXECUTABLE:
         if (target_os == WRITER_TARGET_OS_IOS)
+          continue;
+        if (target_os == WRITER_TARGET_OS_TVOS)
           continue;
 
         native_target = AddBinaryTarget(target, env.get(), err);

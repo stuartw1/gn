@@ -3,9 +3,10 @@
 
 import("stuff.gni")
 
-# Subprojects need to override arguments in {mac,ios}_sdk_overrides.gni in their
+# Subprojects need to override arguments in {mac,ios,tvos}_sdk_overrides.gni in their
 # .gn config, but those arguments are only used on macOS. Including
 # mac_sdk_overrides.gni insures that this doesn't trigger an unused argument
 # warning.
 import("//build/config/mac/mac_sdk_overrides.gni")
 import("//build/config/ios/ios_sdk_overrides.gni")
+import("//build/config/tvos/tvos_sdk_overrides.gni")

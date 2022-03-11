@@ -274,9 +274,9 @@ Value RunActionForEach(Scope* scope,
 
 const char kBundleData[] = "bundle_data";
 const char kBundleData_HelpShort[] =
-    "bundle_data: [iOS/macOS] Declare a target without output.";
+    "bundle_data: [iOS/macOS/tvOS] Declare a target without output.";
 const char kBundleData_Help[] =
-    R"(bundle_data: [iOS/macOS] Declare a target without output.
+    R"(bundle_data: [iOS/macOS/tvOS] Declare a target without output.
 
   This target type allows to declare data that is required at runtime. It is
   used to inform "create_bundle" targets of the files to copy into generated
@@ -287,8 +287,8 @@ const char kBundleData_Help[] =
   output. The output must reference a file inside of {{bundle_root_dir}}.
 
   This target can be used on all platforms though it is designed only to
-  generate iOS/macOS bundle. In cross-platform projects, it is advised to put it
-  behind iOS/macOS conditionals.
+  generate iOS/macOS/tvos bundle. In cross-platform projects, it is advised to put it
+  behind iOS/macOS/tvos conditionals.
 
   See "gn help create_bundle" for more information.
 
@@ -339,11 +339,11 @@ Value RunBundleData(Scope* scope,
 
 const char kCreateBundle[] = "create_bundle";
 const char kCreateBundle_HelpShort[] =
-    "create_bundle: [iOS/macOS] Build an iOS or macOS bundle.";
+    "create_bundle: [iOS/macOS/tvOS] Build an iOS or macOS or tvOS bundle.";
 const char kCreateBundle_Help[] =
-    R"(create_bundle: [ios/macOS] Build an iOS or macOS bundle.
+    R"(create_bundle: [ios/macOS/tvOS] Build an iOS or macOS or tvOS bundle.
 
-  This target generates an iOS or macOS bundle (which is a directory with a
+  This target generates an iOS or macOS or tvOS bundle (which is a directory with a
   well-know structure). This target does not define any sources, instead they
   are computed from all "bundle_data" target this one depends on transitively
   (the recursion stops at "create_bundle" targets).
@@ -353,8 +353,8 @@ const char kCreateBundle_Help[] =
   of the "bundle_data" target use them.
 
   This target can be used on all platforms though it is designed only to
-  generate iOS or macOS bundle. In cross-platform projects, it is advised to put
-  it behind iOS/macOS conditionals.
+  generate iOS or macOS or tvOS bundle. In cross-platform projects, it is advised to put
+  it behind iOS/macOS/tvOS conditionals.
 
   If a create_bundle is specified as a data_deps for another target, the bundle
   is considered a leaf, and its public and private dependencies will not
@@ -364,7 +364,7 @@ const char kCreateBundle_Help[] =
 
 Code signing
 
-  Some bundle needs to be code signed as part of the build (on iOS all
+  Some bundle needs to be code signed as part of the build (on iOS/tvOS all
   application needs to be code signed to run on a device). The code signature
   can be configured via the code_signing_script variable.
 
@@ -389,10 +389,10 @@ Variables
 Example
 
   # Defines a template to create an application. On most platform, this is just
-  # an alias for an "executable" target, but on iOS/macOS, it builds an
+  # an alias for an "executable" target, but on iOS/macOS/tvOS, it builds an
   # application bundle.
   template("app") {
-    if (!is_ios && !is_mac) {
+    if (!is_ios && !is_mac && !is_tvos) {
       executable(target_name) {
         forward_variables_from(invoker, "*")
       }
@@ -401,7 +401,11 @@ Example
       gen_path = target_gen_dir
 
       action("${app_name}_generate_info_plist") {
-        script = [ "//build/ios/ios_gen_plist.py" ]
+        if (is_tvos) {
+          script = [ "//build/tvos/tvos_gen_plist.py" ]
+        } else {
+          script = [ "//build/ios/ios_gen_plist.py" ]
+        }
         sources = [ "templates/Info.plist" ]
         outputs = [ "$gen_path/Info.plist" ]
         args = rebase_path(sources, root_build_dir) +
@@ -426,7 +430,7 @@ Example
       code_signing =
           defined(invoker.code_signing) && invoker.code_signing
 
-      if (!is_ios || !code_signing) {
+      if ((!is_ios && !is_tvos) || !code_signing) {
         bundle_data("${app_name}_bundle_executable") {
           public_deps = [ ":${app_name}_generate_executable" ]
           sources = [ "$gen_path/$app_name" ]
@@ -437,7 +441,7 @@ Example
       create_bundle("$app_name.app") {
         product_type = "com.apple.product-type.application"
 
-        if (is_ios) {
+        if (is_ios || is_tvos) {
           bundle_root_dir = "$root_build_dir/$target_name"
           bundle_contents_dir = bundle_root_dir
           bundle_resources_dir = bundle_contents_dir
@@ -469,6 +473,29 @@ Example
           ]
           code_signing_args = [
             "-i=" + ios_code_signing_identity,
+            "-b=" + rebase_path(
+                "$target_gen_dir/$app_name", root_build_dir),
+            "-e=" + rebase_path(
+                invoker.entitlements_path, root_build_dir),
+            "-e=" + rebase_path(
+                "$target_gen_dir/$app_name.xcent", root_build_dir),
+            rebase_path(bundle_root_dir, root_build_dir),
+          ]
+        } else if (is_tvos && code_signing) {
+          deps += [ ":${app_name}_generate_executable" ]
+          code_signing_script = "//build/config/tvos/codesign.py"
+          code_signing_sources = [
+            invoker.entitlements_path,
+            "$target_gen_dir/$app_name",
+          ]
+          code_signing_outputs = [
+            "$bundle_root_dir/$app_name",
+            "$bundle_root_dir/_CodeSignature/CodeResources",
+            "$bundle_root_dir/embedded.mobileprovision",
+            "$target_gen_dir/$app_name.xcent",
+          ]
+          code_signing_args = [
+            "-i=" + tvos_code_signing_identity,
             "-b=" + rebase_path(
                 "$target_gen_dir/$app_name", root_build_dir),
             "-e=" + rebase_path(

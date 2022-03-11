@@ -43,7 +43,7 @@
 #include <AvailabilityMacros.h>
 #endif
 
-#if !defined(OS_IOS)
+#if !(defined(OS_IOS) || defined(OS_TVOS))
 #include <grp.h>
 #endif
 
@@ -612,7 +612,7 @@ bool VerifyPathControlledByUser(const FilePath& base,
   return true;
 }
 
-#if defined(OS_MACOSX) && !defined(OS_IOS)
+#if defined(OS_MACOSX) && !(defined(OS_IOS) || defined(OS_TVOS))
 bool VerifyPathControlledByAdmin(const FilePath& path) {
   const unsigned kRootUid = 0;
   const FilePath kFileSystemRoot("/");
@@ -635,7 +635,7 @@ bool VerifyPathControlledByAdmin(const FilePath& path) {
   return VerifyPathControlledByUser(kFileSystemRoot, path, kRootUid,
                                     allowed_group_ids);
 }
-#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
+#endif  // defined(OS_MACOSX) && !(defined(OS_IOS) || defined(OS_TVOS))
 
 int GetMaximumPathComponentLength(const FilePath& path) {
   return pathconf(path.value().c_str(), _PC_NAME_MAX);

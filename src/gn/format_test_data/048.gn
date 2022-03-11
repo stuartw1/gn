@@ -1,6 +1,6 @@
 # No blank inserted after libs (caused by trailing comment on 'else').
 component("google_toolbox_for_mac") {
-  if (!is_ios) {
+  if ((!is_ios) || (is_tvos)) {
     sources += [
       "src/AddressBook/GTMABAddressBook.h",
       "src/AddressBook/GTMABAddressBook.m",
@@ -10,7 +10,7 @@ component("google_toolbox_for_mac") {
       "AddressBook.framework",
       "AppKit.framework",
     ]
-  } else {  # is_ios
+  } else {  # is_ios or is_tvos
     sources += [
       "src/iPhone/GTMFadeTruncatingLabel.h",
       "src/iPhone/GTMFadeTruncatingLabel.m",

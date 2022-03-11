@@ -2,6 +2,7 @@
 is_android = false
 is_chromeos = false
 is_ios = false
+is_tvos = false
 is_linux -= false
 is_mac = true
 is_nacl = false

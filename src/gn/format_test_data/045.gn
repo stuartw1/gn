@@ -1,5 +1,5 @@
 static_library("browser") {
-  if (!is_ios) {
+  if ((!is_ios) || (!is_tvos)) {
     sources += rebase_path(gypi_values.chrome_browser_predictor_sources,
                            ".", "//chrome")
     sources += rebase_path(gypi_values.chrome_browser_predictor_sourcesaaaaaaaa,

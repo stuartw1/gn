@@ -26,6 +26,9 @@
 #if defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
 #define OS_IOS 1
 #endif  // defined(TARGET_OS_IPHONE) && TARGET_OS_IPHONE
+#if defined(TARGET_OS_APPLETV) && TARGET_OS_APPLETV
+#define OS_TVOS 1
+#endif  // defined(TARGET_OS_APPLETV) && TARGET_OS_APPLETV
 #elif defined(__linux__)
 #define OS_LINUX 1
 // include a system header to pull in features.h for glibc/uclibc macros.
